@@ -7,9 +7,11 @@ import java.util.List;
 public class ArffLoader {
 	static String relation;
 	static List<ArffAttribute> attributes;
+	static List<NeuralNetworkDatum> data;
 	
 	public static void load(String fileName) {
 		attributes = new ArrayList<ArffAttribute>();
+		data = new ArrayList<NeuralNetworkDatum>();
 		
 		try (BufferedReader br = new BufferedReader(new FileReader(fileName))) {
 			String line;
@@ -17,6 +19,32 @@ public class ArffLoader {
 		    
 			while ((line = br.readLine()) != null) {
 		    	if (reachedData) {
+		    		String[] split = line.split(",");
+		    		if (split.length < attributes.size())
+		    			continue;
+		    		
+		    		double[] datumInputs = new double[getNeuralNetworkInputSize()];
+		    		int curPosition = 0;
+		    		for (int i = 0; i < attributes.size() - 1; i++) {
+		    			if (attributes.get(i).isReal) {
+		    				datumInputs[curPosition++] = Double.parseDouble(split[i]);
+		    			} else {
+		    				for (String enumValue : attributes.get(i).enumValues) {
+		    					datumInputs[curPosition++] 
+		    							= (enumValue.equals(split[i])) ? 1 : 0;
+		    				}
+		    			}
+		    		}
+		    		
+		    		int datumOutput = 0;
+		    		for (String enumValue : attributes.get(attributes.size() - 1).enumValues) {
+		    			if (enumValue.equals(split[split.length - 1]))
+		    				break;
+		    			datumOutput++;
+		    		}
+		    		
+		    		NeuralNetworkDatum datum = new NeuralNetworkDatum(datumInputs, datumOutput);
+		    		data.add(datum);
 				} else {
 					String[] split = line.split("\\s+");
 					if (line.startsWith("@RELATION"))
@@ -40,8 +68,7 @@ public class ArffLoader {
 		}
 	}
 	
-	public static void generateNeuralNetwork() {
-		//Create input nodes.
+	private static int getNeuralNetworkInputSize() {
 		int inputOffset = 0;
 		for (int i = 0; i < attributes.size() - 1; i++) {
 			if (attributes.get(i).isReal) {
@@ -52,12 +79,39 @@ public class ArffLoader {
 				inputOffset += attributes.get(i).enumValues.length;
 			}
 		}
+		return inputOffset;
+	}
+	
+	private static int getNeuralNetworkOutputSize() {
+		return attributes.get(attributes.size() - 1).enumValues.length;
+	}
+	
+	public static NeuralNet generateNeuralNetwork() { return generateNeuralNetwork(1.0); }
+	public static NeuralNet generateNeuralNetwork(double initRange) {		
+		int hiddenLayer = (getNeuralNetworkInputSize() + getNeuralNetworkOutputSize()) / 2;
+		NeuralNet neuralNetwork = new NeuralNet(initRange, getNeuralNetworkInputSize(), 
+				hiddenLayer, getNeuralNetworkOutputSize());
+
+		return neuralNetwork;
+	}
+	
+	public static List<NeuralNetworkDatum> getData() { return data; }
+	public static int dataCount() { return data.size(); }
+	public static NeuralNetworkDatum getDatum(int index) { return data.get(index); }
+	
+	public static void scaleData(String name, double scaleValue) {
+		int offset = -1;
+		for (ArffAttribute attribute : attributes) {
+			if (attribute.name.equals(name))
+				offset = attribute.offset;
+		}
 		
-		System.out.println("Input nodes: " + inputOffset);
+		if (offset == -1)
+			throw new IllegalArgumentException("Could not find attribute: " + name);
 		
-		int outputCount = attributes.get(attributes.size() - 1).enumValues.length;
-		
-		System.out.println("Ouput nodes: " + outputCount);
+		for (NeuralNetworkDatum datum : data) {
+			datum.input[offset] *= scaleValue;
+		}
 	}
 }
 
